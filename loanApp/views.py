@@ -17,7 +17,7 @@ import math
 @parser_classes([JSONParser])
 def Register(request):
     data = request.data;
-    if (data.get('role') not in ['customer', 'bank', 'provider']):
+    if (data.get('role') not in ['customer', 'provider']):
         return Response({
                      "message":"Not valid role"}, status=status.HTTP_406_NOT_ACCEPTABLE);   
     
