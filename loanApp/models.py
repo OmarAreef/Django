@@ -1,4 +1,5 @@
 from django.db import models
+import uuid
 from django.contrib.auth.models import AbstractUser
 
 # Create your models here.
@@ -15,6 +16,7 @@ class User(AbstractUser):
     ]
 
 class Loan_fund(models.Model):
+    
     min_amount = models.IntegerField(default=0 ,);
     max_amount = models.IntegerField();
     rate = models.DecimalField(max_digits=3, decimal_places=1 ,);
@@ -27,6 +29,7 @@ class Loan_fund(models.Model):
             "rate", 
             "duration",
             "is_fund",
+            
         ]
 
 class Loan(models.Model):
@@ -34,7 +37,7 @@ class Loan(models.Model):
     accepted = models.BooleanField( default = False);
     user = models.ForeignKey(User, on_delete=models.CASCADE,);
     is_fund = models.BooleanField();
-    fund = models.ForeignKey(Loan_fund, on_delete=models.CASCADE, default=0);
+    fund = models.ForeignKey(Loan_fund, on_delete=models.CASCADE,);
 
     REQUIRED_FIELD = [
             "amount",

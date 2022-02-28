@@ -20,6 +20,7 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 class FundSerializer(serializers.ModelSerializer):
+    myId = serializers.IntegerField(default=0)
     class Meta:
         model=Loan_fund
         fields=[ 
@@ -29,17 +30,38 @@ class FundSerializer(serializers.ModelSerializer):
             "rate", 
             "duration",
             "is_fund",
-            ]
+            "myId"
+        ]
+
+    def create(self, validated_data):
+        print(validated_data)
+        myfund = validated_data.pop('myId')
+        #print(self.fund)
+        # validated_data['fund'] = Loan.objects.filter(id = fund.fund_id)
+        
+        loan = Loan_fund.objects.create(**validated_data)
+        return loan
 
 class LoanSerializer(serializers.ModelSerializer):
-    fund = FundSerializer()
+    fund = FundSerializer( )
     class Meta:
         model=Loan
         fields=[
             "id",
             "amount",
             "fund",
+            "fund_id", 
             "accepted", 
             "is_fund",
             "user"
             ]
+
+    def create(self, validated_data):
+        print(validated_data)
+        myfund = validated_data.pop('fund')
+        #print(self.fund)
+        # validated_data['fund'] = Loan.objects.filter(id = fund.fund_id)
+        validated_data['fund_id'] = myfund['myId']
+        loan = Loan.objects.create(**validated_data)
+        return loan
+    

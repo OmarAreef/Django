@@ -43,9 +43,10 @@ def Login(request):
             }
             response= Response();
             token = jwt.encode(payload, 'secret', algorithm= 'HS256').decode('utf-8')
-            response.set_cookie(key='jwt', value=token, httponly=True);
+            response.set_cookie(key='jwt', value=token, httponly=True, secure=False);
             response.data = {
                     "token":token,
+                    "role":user_found.role
                 }
             response.status = status.HTTP_202_ACCEPTED
             return response
@@ -69,8 +70,8 @@ def Logout(request):
 @api_view(['POST'])
 @parser_classes([JSONParser])
 def create_fund(request):
-    token = request.COOKIES.get('jwt')
-    if not token:
+    token = request.META.get('HTTP_TOKEN')
+    if token == "null":
         return Response({
                      "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
     try:
@@ -81,21 +82,23 @@ def create_fund(request):
     
     user = User.objects.filter(id=payload['id']).first();
     if ( user.role == 'bank'):
-        serializer = FundSerializer(data = request.data)
+        data = request.data
+        data['myId'] = 1
+        serializer = FundSerializer(data =data)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({
-            "data":serializer.data,
+            "data":"serializer.data",
             }, status=status.HTTP_201_CREATED)
     return Response({
             "message":"user not authorised to create a loan fund",
             }, status=status.HTTP_400_BAD_REQUEST)
 
-
-def view_loans(request):
-    data = request.data
-    token = request.COOKIES.get('jwt')
-    if not token:
+@api_view(['GET'])
+@parser_classes([JSONParser])
+def get_fund(request):
+    token = request.META.get('HTTP_TOKEN')
+    if token == "null":
         return Response({
                      "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
     try:
@@ -103,17 +106,36 @@ def view_loans(request):
     except jwt.ExpiredSignatureError:
         return Response({
                      "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
-    loans = Loan.objects.filter(user = payload['id'])
+    user = User.objects.filter(id=payload['id']).first();
+    is_fund = False if (user.role == 'customer') else True
+    funds = Loan_fund.objects.filter(is_fund=is_fund)
+    
+    serializer = FundSerializer(funds, many=True)
+    return Response({
+            "data":serializer.data,
+            }, status=status.HTTP_201_CREATED)
+
+def view_loans(request, payload):
+    data = request.data
+    
+    user = User.objects.filter(id=payload['id']).first()
+    
+    if (user.role != 'bank'):
+        
+        loans = Loan.objects.filter(user = payload['id'])
+    else:
+        loans = Loan.objects.filter(accepted = False);
     serializer = LoanSerializer(loans, many=True)
     return Response({"data": serializer.data})
 
 @api_view(['POST' , 'GET'])
 @parser_classes([JSONParser])
 def loan_api(request):
-    token = request.COOKIES.get('jwt')
-    if not token:
+    token = request.META.get('HTTP_TOKEN')
+    if token == "null":
         return Response({
-                    "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
+                    "message":"Not Logged in please login first",
+                    }, status=status.HTTP_400_BAD_REQUEST)
     try:
         payload = jwt.decode(token, 'secret', algorithm=['HS256'])
     except jwt.ExpiredSignatureError:
@@ -122,13 +144,13 @@ def loan_api(request):
 
     if(request.method == 'POST'):
         user = User.objects.filter(id=payload['id']).first();
-        loan_fund = Loan_fund.objects.filter(id = request.data['fund']).first();
+        loan_fund = Loan_fund.objects.filter(id = request.data['fund']['id']).first();
         if (user != None and user.role != 'bank'):
             is_fund = False if user.role == 'customer' else True
             if (is_fund != loan_fund.is_fund):
                 return Response({
                 "message":"this loan cannot be created",
-                }, status=status.HTTP_400_BAD_REQUEST)
+                }, status=status.HTTP_401_UNAUTHORIZED)
             if(request.data['amount'] < loan_fund.min_amount or request.data['amount'] > loan_fund.max_amount):
                 return Response({
                 "message":"this loan cannot be created",
@@ -137,28 +159,32 @@ def loan_api(request):
 
             data = request.data
             result = data['amount'] * math.pow((1 + loan_fund.rate / 100), loan_fund.duration)
-            data['amount']= result
+            data['amount']= int(result)
             data['is_fund'] = is_fund
             data['user'] =  payload['id']
+            data['fund'] = FundSerializer(request.data['fund']).data
+            print(data)
+            data['fund']['myId'] = data['fund']['id']
             serializer = LoanSerializer(data = data)
             serializer.is_valid(raise_exception=True)
+
             serializer.save()
             return Response({
                 "data":serializer.data,
                 }, status=status.HTTP_201_CREATED)
         return Response({
                 "message":"user not authorised to create a loan",
-                }, status=status.HTTP_400_BAD_REQUEST)
+                }, status=status.HTTP_402_PAYMENT_REQUIRED)
 
     if(request.method == "GET"):
-        return view_loans(request);
+        return view_loans(request, payload);
 
 
 @api_view(['POST'])
 @parser_classes([JSONParser])
 def accept_loan(request):
-    token = request.COOKIES.get('jwt')
-    if not token:
+    token = request.META.get('HTTP_TOKEN')
+    if token == "null":
         return Response({
                      "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
     try:
@@ -202,8 +228,8 @@ def accept_loan(request):
 @api_view(['POST'])
 @parser_classes([JSONParser])
 def pay_loan(request):
-    token = request.COOKIES.get('jwt')
-    if not token:
+    token = request.META.get('HTTP_TOKEN')
+    if token == "null":
         return Response({
                      "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
     try:
@@ -212,17 +238,20 @@ def pay_loan(request):
         return Response({
                      "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
 
-    loan = Loan.objects.get(id = request.data.id)
+    loan = Loan.objects.get(id = request.data['id'])
+    print(loan.user_id)
     user = payload['id']
-    if (user != loan.user):
+    if (user != loan.user_id):
          return Response({
                      "message":"Not Authorised to pay loan"}, status=status.HTTP_400_BAD_REQUEST)
     if (loan.accepted == False):
          return Response({
                      "message":"cannot pay this loan"}, status=status.HTTP_400_BAD_REQUEST)
-    new_amount = loan.amount - request.data.amount
+    new_amount = loan.amount - int(request.data['amount'])
     if (new_amount < 0):
         loan.delete()
     else :
         loan.amount = new_amount
         loan.save()
+    return Response({
+                     "message":"Loan paid"}, status=status.HTTP_200_OK)
