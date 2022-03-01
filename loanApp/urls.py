@@ -13,4 +13,5 @@ urlpatterns = [
     path('loan/', views.loan_api),
     path('accept/',views.accept_loan ),
     path('pay/',views.pay_loan),
+    path('reports/',views.generate_reports),
 ]

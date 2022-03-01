@@ -52,6 +52,7 @@ class LoanSerializer(serializers.ModelSerializer):
             "fund",
             "fund_id", 
             "accepted", 
+            "principal",
             "is_fund",
             "user"
             ]

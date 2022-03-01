@@ -5,8 +5,8 @@ from rest_framework.decorators import api_view, parser_classes
 from rest_framework.response import Response
 from .models import User, Loan, Loan_fund
 from .serializers import UserSerializer, FundSerializer, LoanSerializer 
-import jwt, datetime
-from django.db.models import Sum, Q
+import jwt
+from django.db.models import Sum, Q, Count
 import math
 
 
@@ -158,8 +158,10 @@ def loan_api(request):
             # 
 
             data = request.data
-            result = data['amount'] * math.pow((1 + loan_fund.rate / 100), loan_fund.duration)
+            result = data['amount'] + data['amount'] * ( loan_fund.rate / 100) * loan_fund.duration
+            data['principal']= data['amount']
             data['amount']= int(result)
+            
             data['is_fund'] = is_fund
             data['user'] =  payload['id']
             data['fund'] = FundSerializer(request.data['fund']).data
@@ -202,7 +204,9 @@ def accept_loan(request):
             all_loans = Loan.objects.filter(Q(accepted = True) & Q(is_fund = False)).aggregate(Sum('amount'))['amount__sum']
             all_funds = 0 if all_funds == None else all_funds
             all_loans = 0 if all_loans == None else all_loans
-            all_loans = loan.amount
+            all_loans = all_loans +loan.amount
+            print(all_loans)
+            print(all_funds)
             if (all_funds < all_loans):
                 return Response({
                      "message":"this loan cannot be created, funds are not available",
@@ -255,3 +259,34 @@ def pay_loan(request):
         loan.save()
     return Response({
                      "message":"Loan paid"}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@parser_classes([JSONParser])
+def generate_reports(request):
+    token = request.META.get('HTTP_TOKEN')
+    if token == "null":
+        return Response({
+                     "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        payload = jwt.decode(token, 'secret', algorithm=['HS256'])
+    except jwt.ExpiredSignatureError:
+        return Response({
+                     "message":"Not Logged in please login first"}, status=status.HTTP_400_BAD_REQUEST)
+    user = User.objects.filter(id=payload['id']).first()
+    if (user.role != 'bank'):
+        return Response({
+                     "message":"Not authorised"}, status=status.HTTP_400_BAD_REQUEST)
+    all_loans = Loan.objects.filter(Q(accepted = True) & Q(is_fund = False)).aggregate(myCount = Count('amount'), sumAmount =Sum('amount'))
+    all_funds = Loan.objects.filter(Q(accepted = True) & Q(is_fund = True)).aggregate(myCount = Count('amount'), sumAmount =Sum('amount'))
+    applications = Loan.objects.filter(Q(accepted = False) & Q(is_fund = False)).aggregate(myCount = Count('amount'))
+    applications_funds = Loan.objects.filter(Q(accepted = False) & Q(is_fund = True) ).aggregate(myCount = Count('amount'))
+
+    return Response({
+                     "loans": all_loans['myCount'] if (all_loans) else 0 ,
+                     "funds":all_funds['myCount'] if (all_funds) else 0 ,
+                     "loansSum":all_loans['sumAmount'] if (all_loans) else 0,
+                     "fundsSum":all_funds['sumAmount'] if (all_funds) else 0,
+                     "loanApplications":applications['myCount'] if (applications) else 0,
+                     "fundApplications":applications_funds['myCount'] if (applications_funds) else 0
+                     }, status=status.HTTP_200_OK)
